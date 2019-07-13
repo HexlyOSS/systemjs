@@ -2,20 +2,40 @@ const recurse = (obj, ctx, path = []) => {
   const convert = (prop, sql) => {
     // TODO: add error handling using the prop
     const { db } = ctx.system
-    return {
-      sql,
-      one: async params => {
-        const { rows } = await db.query(sql, params)
-        return rows.length > 0 ? rows[0] : null
-      },
-      many: async params => (await db.query(sql, params)).rows,
-      raw: params => db.query(sql, params),
-      // used for testing
-      err: async params => {
-        const joined = path.join('.')
-        const msg = `Query [${joined}.${prop}] failed with the following SQL: \n${sql}`
-        throw new Error(msg)
+
+    const one = async params => {
+      const { rows } = await db.query(sql, params)
+      return rows.length > 0 ? rows[0] : null
+    }
+
+    const many = async params => (await db.query(sql, params)).rows
+    const raw = params => db.query(sql, params)
+
+    const err = async params => {
+      const msg = 'Database isnt real'
+      throw new Error(msg)
+    }
+
+    const wrap = fn => async params => {
+      try {
+        return await fn(params)
+      } catch (err) {
+        const joined = path.join('.') + '.' + prop
+        const msg = `[dbo] Query [ ${joined} ] failed: ${err.message}`
+        const e = new Error(msg, err)
+        e.sql = sql
+        e.path = joined
+        throw e
       }
+    }
+
+    return {
+      sql: wrap(sql),
+      one: wrap(one),
+      many: wrap(one),
+      raw: wrap(one),
+      // used for testing
+      err: wrap(err)
     }
   }
 
@@ -28,7 +48,7 @@ const recurse = (obj, ctx, path = []) => {
         break
 
       case 'string':
-        obj[prop] = convert(prop, value)
+        obj[prop] = convert(prop, value.trim())
         break
 
       default:
@@ -42,4 +62,31 @@ const transform = (sqljs, ctx) => {
   recurse(sqljs, ctx)
 }
 
-module.exports = { transform }
+const hook = system => {
+  // hook into the "dbo" being scanned
+  let resolve, reject, dbo
+  system.on('resolution:resolved:dbo', ({ waiter, resolved }) => {
+    waiter(
+      new Promise((res, rej) => {
+        resolve = res
+        reject = rej
+        dbo = resolved
+      })
+    )
+  })
+
+  // once the entire system is resolved, convert the sql to functions
+  system.on('resolution:complete', ctx => {
+    try {
+      transform(dbo, ctx)
+      resolve()
+    } catch (err) {
+      reject(err)
+    }
+  })
+}
+
+module.exports = {
+  hook,
+  transform
+}
