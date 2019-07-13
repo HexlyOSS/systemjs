@@ -1,4 +1,3 @@
-module.exports = {}
 module.exports.selectAll = /* sql */ `
   select * from public.person
 `
