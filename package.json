@@ -1,6 +1,6 @@
 {
-  "name": "@hexly/systemjs",
-  "version": "0.0.2",
+  "name": "@hexlyoss/systemjs",
+  "version": "0.0.5",
   "description": "",
   "main": "index.js",
   "scripts": {
